@@ -5,10 +5,6 @@ terraform {
       source = "hashicorp/aws"
       version = ">= 2.0"
     }
-    template = {
-      source = "hashicorp/template"
-      version = ">= 2.0"
-    }
   }
 }
 
@@ -61,19 +57,20 @@ data "aws_iam_policy_document" "sns_chatbot" {
 }
 
 ## Slack Channel Configuration
+resource "aws_cloudformation_stack" "tf_chatbot" {
+  for_each = var.enabled ? local.slack_targets : {}
 
-resource "aws_cloudformation_stack" "slack_channel_config" {
-  count = var.enabled ? 1 : 0
-  
-  name = "chatbot-slack-channel-config-${var.chatbot_config_name}"
-  template_body = jsonencode(yamldecode(templatefile("${path.module}/cfn-chatbot-slack.yaml.tpl", {
-    config_name = var.chatbot_config_name
-    iam_role_arn = aws_iam_role.chatbot[0].arn
-    slack_workspace_id = var.slack_workspace_id
-    slack_channel_id = var.slack_channel_id
-    log_level = var.log_level
-    sns_topic_arn = aws_sns_topic.chatbot[0].arn
-  })))
+  name = "terraform-chatbot-${each.key}"
+
+  parameters = {
+    ConfigurationNameParam = each.key
+    IamRoleArnArnParam     = aws_iam_role.chatbot.*.arn[0]
+    SnsTopicArnsParam      = join(",", flatten([var.alarm_sns_topic_arns]))
+    SlackChannelIdParam    = each.value.channel
+    SlackWorkspaceIdParam  = each.value.workspace
+    LoggingLevelParam      = var.logging_level
+  }
+  template_body = file("${path.module}/cf-chatbot.yml")
 }
 
 ## Chatbot IAM Role
